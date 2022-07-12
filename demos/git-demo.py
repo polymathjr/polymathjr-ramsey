@@ -3,7 +3,7 @@ import random
 
 def dot_product(x, y):
     if len(x) != len(y):
-        raise Exception("Length of vectors do not agree")
+        raise Exception("Error: Length of vectors do not agree")
 
     sum = 0
     for i in range(len(x)):
