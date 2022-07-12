@@ -2,6 +2,10 @@ import numpy as np
 import random
 
 def dot_product(x, y):
+    if len(x) != len(y):
+        raise Exception("Error: Length of vectors do not agree")
+    if x[0] > 1:
+        raise Exception("Are you working with binary vectors?")
     sum = 0
 
     return x.y
