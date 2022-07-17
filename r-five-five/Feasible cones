@@ -1,0 +1,51 @@
+######################################### Setting up an example
+
+M = [[0, 1, 0, 0, 0, 1, 0, 0, 1],
+     [1, 0, 1, 0, 0, 0, 0, 1, 1],
+     [0, 1, 0, 0, 0, 0, 1, 1, 0],
+     [0, 0, 0, 0, 1, 0, 0, 1, 0],
+     [0, 0, 0, 1, 0, 0, 0, 1, 0],
+     [1, 0, 0, 0, 0, 0, 1, 0, 1],
+     [0, 0, 1, 0, 0, 1, 0, 0, 0],
+     [0, 1, 1, 1, 1, 0, 0, 0, 0],
+     [1, 1, 0, 0, 0, 1, 0, 0, 0]]
+H = matrix(M)
+Graph(H)
+
+######################################### Creating a list of feasible cones (subgraphs without clique of size 3)
+
+from itertools import combinations
+
+def feasible_cones(H):
+    cones = list()
+    cliques = list(sage.graphs.cliquer.all_cliques(Graph(H), 3, 3))
+    vertices = list(range(H.nrows()))
+    for cone_size in range(1,len(vertices)+1):
+        cones.append([])
+        combi = list(combinations(vertices,cone_size))
+        for i in range(len(combi)):
+            check = False
+            for clique in cliques:
+                check = all(item in combi[i] for item in clique)
+                if check == True:
+                    break
+            if check == False:
+                cones[cone_size-1].append(combi[i])
+    return cones
+
+feasible_cones(H)
+
+######################################### Partitioning the cones into intervals (work in progress!)
+
+def cone_intervals(new_list):
+    intervals = [[new_list[0]]]
+    new_list.pop(0)
+    for cone in new_list:
+        for i in range(len(intervals)):
+            if intervals[i][-1] == cone[:len(intervals[i][-1])]:
+                intervals[i].append(cone)
+    return intervals
+                
+new_list = [[0],[0,1],[0,1,2],[0,2],[1,3]]
+
+cone_intervals(new_list)
