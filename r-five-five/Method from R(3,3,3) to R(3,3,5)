@@ -1,0 +1,20 @@
+from itertools import combinations
+
+# this is the code to generate R(3,3,5) from R(3,3,3) 
+for g in graphs(3):
+    if len(list(g.all_cliques(3,3))) == 0 and len(list(g.complement().all_cliques(3,3))) == 0:
+        g.add_vertex()
+        for num_edges in range(4):
+            for vtxs in combinations([0,1,2],num_edges):
+                a = g.copy()
+                a.add_edges([(i,3) for i in vtxs])
+                if len(list(a.all_cliques(3,3))) == 0 and len(list(a.complement().all_cliques(3,3))) == 0:
+                    a.add_vertex()
+                    b = a.copy()
+                    for num_edges in range(5):
+                        for vtxs in combinations([0,1,2,3],num_edges):
+                            b.add_edges([(i,4) for i in vtxs])
+                            if len(list(b.all_cliques(3,3))) == 0 and len(list(b.complement().all_cliques(3,3))) == 0:
+                                b.show()
+                                print("B COMPLEMENT")
+                                b.complement().show()
