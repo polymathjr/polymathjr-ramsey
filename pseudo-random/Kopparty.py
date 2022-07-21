@@ -77,7 +77,7 @@ if subg3 is not None:
 
 
 kpa8 = kopparty_alt(8)
-print(kpa8.order(), kpa8.size(), kpa8.complement.size())
+print(kpa8.order())
 
 
 s1 = kpa8.subgraph_search(r35_13)
