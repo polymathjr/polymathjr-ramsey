@@ -42,7 +42,7 @@ def oneDimSubspace(q, dim):
     except:
         raise Exception("The order of a finite field must be a prime power")
     V = list(VectorSpace(k, dim))
-    for v in V: #very ugly hack to remove the zero vector from V
+    for v in V: # Ugly hack to remove the zero vector from V
         if isZero(v):
             V.remove(v)
             break
@@ -77,7 +77,6 @@ def kopparty_alt(q):
 
 
 kp9 = kopparty(9)
-print(kp9.order())
 
 subg3 = kp9.subgraph_search(r35_13, induced=True)
 if subg3 is not None:
@@ -86,7 +85,6 @@ if subg3 is not None:
 
 
 kpa8 = kopparty_alt(8)
-print(kpa8.order())
 
 
 s1 = kpa8.subgraph_search(r35_13) #This takes quite some time (4-5 minutes)
@@ -94,4 +92,12 @@ if s1 is not None:
     print(s1.vertices())
 
 
-
+print("Graph statistics")
+print("Number of vertices:", kp9.order())
+print("Number of Edges:", kp9.size())
+print("Degree Sequence:", kp9.degree_sequence())
+print("Spectrum", kp9.spectrum())
+print("Number of vertices:", kpa8.order())
+print("Number of Edges:", kpa8.size())
+print("Degree Sequence:", kpa8.degree_sequence())
+print("Spectrum", kpa8.spectrum())
