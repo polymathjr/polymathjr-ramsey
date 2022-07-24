@@ -24,11 +24,13 @@ class PotentialEdge:
         self.G_vertex = G_vert
         self.H_vertex = H_vert
         # Set current value of the variable
-        exists = EdgeExists.UNKNOWN
+        self.exists = EdgeExists.UNKNOWN
         # Create sets of clique clauses and independent-set clauses
         self.clique_clauses = []
         self.ind_set_clauses = []
-    
+
+    def __str__(self):
+        return "("+str(self.G_vertex) + "," + str(self.H_vertex)+")"
     
     # Set the value of the variable
     # NOTE: This should only be used when we change the value from UNKNOWN to TRUE or FALSE
@@ -71,6 +73,13 @@ class Clause:
         # Add clauses to each potential edge
         for pot_edge in variables:
             pot_edge.add_clause(self, clique_clause)
+
+    def __str__(self):
+        output = ""
+        for var in self.potential_edges:
+            output += str(var) + ", "
+        output += str(self.clique_clause)
+        return output
     
     
     # Decrease the number of unknowns, called when a PotentialEdge's value goes from UNKNOWN to TRUE or FALSE
@@ -119,31 +128,31 @@ class PotentialEdgeMatrix:
 
 
 # Some tests to make sure the classes are working as intended
-testEdge1 = PotentialEdge(_sage_const_0 ,_sage_const_0 )
-testEdge2 = PotentialEdge(_sage_const_0 ,_sage_const_1 )
-testEdge3 = PotentialEdge(_sage_const_0 ,_sage_const_2 )
-testClause1 = Clause([testEdge1, testEdge2], True)
-testClause2 = Clause([testEdge1, testEdge3], False)
+# testEdge1 = PotentialEdge(_sage_const_0 ,_sage_const_0 )
+# testEdge2 = PotentialEdge(_sage_const_0 ,_sage_const_1 )
+# testEdge3 = PotentialEdge(_sage_const_0 ,_sage_const_2 )
+# testClause1 = Clause([testEdge1, testEdge2], True)
+# testClause2 = Clause([testEdge1, testEdge3], False)
 
-print("Clause 1 starts with %s unknowns" % (testClause1.num_unknown))
-print("Clause 2 starts with %s unknowns" % (testClause2.num_unknown))
+# print("Clause 1 starts with %s unknowns" % (testClause1.num_unknown))
+# print("Clause 2 starts with %s unknowns" % (testClause2.num_unknown))
 
-print("Setting first potential edge to FALSE")
-testEdge1.set_exists(EdgeExists.FALSE)
+# print("Setting first potential edge to FALSE")
+# testEdge1.set_exists(EdgeExists.FALSE)
 
-print("Afterwards there are %s unknowns and %s undesired variables in Clause 1" 
-      % (testClause1.num_unknown, testClause1.num_undesired))
-print("Afterwards there are %s unknowns and %s undesired variables in Clause 2" 
-      % (testClause2.num_unknown, testClause2.num_undesired))
+# print("Afterwards there are %s unknowns and %s undesired variables in Clause 1" 
+#       % (testClause1.num_unknown, testClause1.num_undesired))
+# print("Afterwards there are %s unknowns and %s undesired variables in Clause 2" 
+#       % (testClause2.num_unknown, testClause2.num_undesired))
 
-print("Setting other two potential edges, should keep Clause 1 ok, but put Clause 2 into a FAIL state")
-testEdge2.set_exists(EdgeExists.TRUE)
-testEdge3.set_exists(EdgeExists.FALSE)
+# print("Setting other two potential edges, should keep Clause 1 ok, but put Clause 2 into a FAIL state")
+# testEdge2.set_exists(EdgeExists.TRUE)
+# testEdge3.set_exists(EdgeExists.FALSE)
 
-print("Afterwards there are %s unknowns and %s undesired variables in Clause 1" 
-      % (testClause1.num_unknown, testClause1.num_undesired))
-print("Afterwards there are %s unknowns and %s undesired variables in Clause 2" 
-      % (testClause2.num_unknown, testClause2.num_undesired))
-print("Is Clause 1 in a fail state? %s" % (testClause1.in_fail_state()))
-print("Is Clause 2 in a fail state? %s" % (testClause2.in_fail_state()))
+# print("Afterwards there are %s unknowns and %s undesired variables in Clause 1" 
+#       % (testClause1.num_unknown, testClause1.num_undesired))
+# print("Afterwards there are %s unknowns and %s undesired variables in Clause 2" 
+#       % (testClause2.num_unknown, testClause2.num_undesired))
+# print("Is Clause 1 in a fail state? %s" % (testClause1.in_fail_state()))
+# print("Is Clause 2 in a fail state? %s" % (testClause2.in_fail_state()))
 
