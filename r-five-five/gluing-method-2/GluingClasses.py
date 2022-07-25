@@ -30,7 +30,12 @@ class PotentialEdge:
         self.ind_set_clauses = []
 
     def __str__(self):
-        return "("+str(self.G_vertex) + "," + str(self.H_vertex)+")"
+        if self.exists == EdgeExists.UNKNOWN:
+            return "("+str(self.G_vertex) + "," + str(self.H_vertex)+ "," + "U)"
+        elif self.exists == EdgeExists.TRUE:
+            return "("+str(self.G_vertex) + "," + str(self.H_vertex)+ "," + "T)"
+        else:
+            return "("+str(self.G_vertex) + "," + str(self.H_vertex)+ "," + "F)"
     
     # Set the value of the variable
     # NOTE: This should only be used when we change the value from UNKNOWN to TRUE or FALSE
@@ -120,7 +125,17 @@ class PotentialEdgeMatrix:
             for col in range(_sage_const_0 , num_cols):
                 current_row.append(PotentialEdge(row, col))
             self.matrix.append(current_row)
+    def __str__(self):
+        output = "["
+        for list in self.matrix:
+            output += "["
+            for elem in list:
+                output += str(elem)
+                output += ", "
+            output += "],"
+        output += "]"
 
+        return output
 
 
 
