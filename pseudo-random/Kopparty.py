@@ -74,6 +74,24 @@ def kopparty_alt(q):
     V = oneDimSubspace(q, 4)
     return Graph([V, lambda u, v: (u != v and beta(u, v) == 0)])
 
+def dot(u, v):
+    if len(u) != len(v): 
+        raise Exception('Input vectors need to have equal dimensions')
+    B = 0
+    for i in range(len(u)):
+        B += u[i]*v[i]
+    return B    
+
+def filt(v):
+    retval = []
+    for x in v:
+        if dot(x, x) != 0:
+            retval.append(x)
+    return retval
+
+def alon_kriv(q,s):
+    V = filt(oneDimSubspace(q,s-1))
+    return Graph([V, lambda u, v: dot(u, v) == 0])
 
 
 kp9 = kopparty(9)
