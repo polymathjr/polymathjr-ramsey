@@ -1,0 +1,61 @@
+from sage.graphs.graph_input import from_graph6
+from sage.graphs.independent_sets import IndependentSets
+from itertools import combinations
+import random
+
+#Open the unique graph H in R(3,9,35)
+with open('r39_35.g6', 'r') as file:
+    graphs = file.readlines()
+H = Graph(graphs[0])
+
+#Construct the other part of the graph, which we will call G (the vertex of degree 3 and its neighborhood)
+M = [[0,1,1,1],[1,0,0,0],[1,0,0,0],[1,0,0,0]]
+G = Graph(matrix(M))
+
+#List all the independents sets of H
+indsets = list(IndependentSets(H))
+
+#Gluing G and H together based on a mapping
+#Mapping = list of the neighborhoods of each of the vertices adjacent to the vertex of degree 3
+def glue(G,H,mapping):
+    F = G.disjoint_union(H)
+    for i in range(1,len(mapping)+1):
+        for vertex in mapping[i-1]:
+            F.add_edge((0,i),(1,vertex))
+    return F
+
+#Constructing a random mapping
+def new_mapping(indsets):
+    mapping = []
+    for i in range(3):
+        mapping.append(indsets[random.randint(0,len(indsets))])
+    return mapping
+
+#Finding all the independent sets of a specific size within a graph
+def find_ind_sets(graph,size):
+    I = (x for x in IndependentSets(graph) if len(x) == size)
+    return list(I)
+
+#Random naive method to find a R(3,10,39) graph. Returns the number of independent 10 sets for the constructed graph F
+#Increase the max number of iterations to keep searching
+def naive(G,H,indsets):
+    mapping = new_mapping(indsets)
+    F = glue(G,H,mapping)
+    ind_10 = len(find_ind_sets(F,10))
+    print(ind_10)
+    iteration = 1; new_ind_10 = ind_10
+    while ind_10 > 0 and iteration < 4:
+        iteration += 1
+        while new_ind_10 >= ind_10:
+            mapping = new_mapping(indsets)
+            F = glue(G,H,mapping)
+            new_ind_10 = len(find_ind_sets(F,10))
+        ind_10 = new_ind_10
+        print(ind_10)
+    return ind_10, F
+
+ind_10, F = naive(G,H,indsets)
+
+#Some rules to remember:
+#E2: the union of the neighborhoud of two vertices in G must intersect every 8-sized independent set in H
+#E3: the union of the neighborhoud of three vertices in G must intersect every 7-sized independent set in H
