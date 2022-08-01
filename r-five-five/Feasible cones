@@ -1,25 +1,30 @@
-######################################### Setting up an example
+#Goal: enumerate all the R(4,5,23) graphs
+#Method: glue together graphs in R(3,5,d) and graphs in R(4,5,22-d), where 5 <= d <= 13
+#To begin with, we will only look at the case d = 5 for our gluing
+from sage.graphs.graph_input import from_graph6
 
-M = [[0, 1, 0, 0, 0, 1, 0, 0, 1],
-     [1, 0, 1, 0, 0, 0, 0, 1, 1],
-     [0, 1, 0, 0, 0, 0, 1, 1, 0],
-     [0, 0, 0, 0, 1, 0, 0, 1, 0],
-     [0, 0, 0, 1, 0, 0, 0, 1, 0],
-     [1, 0, 0, 0, 0, 0, 1, 0, 1],
-     [0, 0, 1, 0, 0, 1, 0, 0, 0],
-     [0, 1, 1, 1, 1, 0, 0, 0, 0],
-     [1, 1, 0, 0, 0, 1, 0, 0, 0]]
-H = matrix(M)
-Graph(H)
+#Import the unique graph H in R(4,4,17)
+with open('r44_17.g6', 'r') as file:
+    graphs = file.readlines()
+h = Graph(graphs[0])
 
-######################################### Creating a list of feasible cones (subgraphs without clique of size 3)
+#Import the thirtheen graphs G in R(3,5,5), store the first one
+with open('r35_5.g6', 'r') as file:
+    graphs = file.readlines()
+g = Graph(graphs[0])
+
+#Show the graphs
+h.show()
+g.show()
 
 from itertools import combinations
 
-def feasible_cones(H):
+#Lists all the feasible cones (i.e. subsets without clique of size 3) of a graph H in R(4,4,d)
+#It finds all the 3-cliques, forms all the subets, and checks whether or not they contain a clique
+def feasible_cones(h):
     cones = list()
-    cliques = list(sage.graphs.cliquer.all_cliques(Graph(H), 3, 3))
-    vertices = list(range(H.nrows()))
+    cliques = list(sage.graphs.cliquer.all_cliques(h, 3, 3))
+    vertices = h.vertices()
     for cone_size in range(1,len(vertices)+1):
         cones.append([])
         combi = list(combinations(vertices,cone_size))
@@ -33,19 +38,136 @@ def feasible_cones(H):
                 cones[cone_size-1].append(combi[i])
     return cones
 
-feasible_cones(H)
+#Combines a list of lists into a single list
+def union(list_of_lists):
+    union = []
+    for subset in list_of_lists:
+        for components in subset:
+            union.append(components)
+    return list(union)
 
-######################################### Partitioning the cones into intervals (work in progress!)
-
+#Groups cones into several intervals, such that all the cones in the interval are contained in one another
 def cone_intervals(new_list):
     intervals = [[new_list[0]]]
     new_list.pop(0)
     for cone in new_list:
+        check = False
         for i in range(len(intervals)):
             if intervals[i][-1] == cone[:len(intervals[i][-1])]:
                 intervals[i].append(cone)
+                check = True
+                break
+            else:
+                continue
+        if check == False:
+            intervals.append([cone])
     return intervals
-                
-new_list = [[0],[0,1],[0,1,2],[0,2],[1,3]]
 
-cone_intervals(new_list)
+#Write each interval as a list of the form [bottom, top]
+def top_bottom_notation(intervals):
+    new_intervals = []
+    for interval in intervals:
+        new_intervals.append([interval[0],interval[-1]])
+    return new_intervals
+        
+cones = top_bottom_notation(cone_intervals(union(feasible_cones(h))))
+cones
+
+from sage.graphs.independent_sets import IndependentSets
+
+#defining the H-functions on page 6 of the R(5,5) paper
+
+#H1: vertices in H that are adjacent to X (a list of vertices in the graph H)
+def H1(x,h):
+    M = h.adjacency_matrix()
+    h1 = list()
+    for startpoint in x:
+        for endpoint in h.vertices():
+            if M[startpoint][endpoint] == 1:
+                h1.append(endpoint)
+    return list(set(h1))
+    
+print(H1([0],h))
+
+#H2: vertices in H that are not adjacent to vertices that are not in X
+def H2(x,h):
+    M = h.adjacency_matrix()
+    not_x = list(); h2 = list()
+    vertices = list(range(M.nrows()))
+    for vertex in vertices:
+        if vertex not in x:
+            not_x.append(vertex)
+    for v in not_x:
+        vertices.remove(v)
+        for w in vertices:
+            if M[v][w] == 0:
+                h2.append(w)
+        vertices.append(v)
+    return list(set(h2))
+
+print(H2([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],h))
+
+#H3: vertices in H that form an independent 3-set with two vertices not in X
+#ind_sets_three are the independent 3-sets of H
+def H3(x,h,ind_three_sets):
+    M = h.adjacency_matrix()
+    not_x = list(); h3 = list()
+    vertices = list(range(M.nrows()))
+    for vertex in vertices:
+        if vertex not in x:
+            not_x.append(vertex)
+    combos = list(combinations(not_x,2))
+    for combo in combos:
+        for ind_three_set in ind_three_sets:
+            if set(combo).issubset(set(ind_three_set)):
+                w = ind_three_set.copy()
+                w.remove(combo[0]);w.remove(combo[1])
+                h3.append(w[0])
+    return list(set(h3))
+
+#Finding the independent sets of size three in H, which we need as input for H3
+ind_sets = list(IndependentSets(h))
+ind_three_sets = []
+for ind_set in ind_sets:
+    if len(ind_set) == 3:
+        ind_three_sets.append(ind_set)
+        
+print(H3([0,1,2,3,4,5,6,7,8,9,10,11,12,13],h,ind_three_sets))
+
+from sage.graphs.independent_sets import IndependentSets
+
+#We will have to create all possible combinations of cone intervals for each of the vertices in G
+#This is computationally expensive!
+#For now, let's write the collapsing rules and try it on one combination.
+#Each element in 'gluing' represents the cone interval coupled to the vertex of the same index
+
+gluing = [cones[0],cones[2],cones[2],cones[8],cones[3]]
+
+#We will implement collapsing rules to check which gluings are possible within this combination.
+
+def collapsing_rule_K2(g,h,gluing):
+    k2_cliques = list(sage.graphs.cliquer.all_cliques(g, 2, 2))
+    check = True
+    for k2_clique in k2_cliques:
+        B_u = gluing[k2_clique[0]][0]
+        B_v = gluing[k2_clique[1]][0]
+        T_u = gluing[k2_clique[0]][1]
+        T_v = gluing[k2_clique[1]][1]
+        intersection = set(B_u) & set(B_v)
+        H1_uv = set(H1(list(intersection),h))
+        if intersection & H1_uv: #it's not empty
+            check = False
+            break
+        else: #it's empty
+            if H1_uv & set(B_v): #it's not empty
+                for vertex in H1_uv & set(B_v):
+                    T_u.remove(vertex)
+                gluing[k2_clique[0]][1] = T_u
+            else:
+                continue
+    if check == False:
+        return 'trash interval'
+    else:
+        return gluing
+    
+collapsing_rule_K2(g,h,gluing)
