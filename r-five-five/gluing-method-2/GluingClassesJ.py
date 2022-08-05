@@ -125,6 +125,12 @@ class Clause:
         else:
             return self.num_unknown == _sage_const_0  and self.num_undesired == len(self.potential_edges)
 
+    def is_satisfied(self):
+        if self.clause_type == ClauseType.INDEP_NO_EDGES:
+            return self.num_undesired + self.num_unknown <= len(self.potential_edges) - 2
+        else:
+            return self.num_undesired + self.num_unknown <= len(self.potential_edges) - 1
+
 
 # Construct a class to represent the matrix of variables
 class PotentialEdgeMatrix:
