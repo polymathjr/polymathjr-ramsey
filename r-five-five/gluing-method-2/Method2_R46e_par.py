@@ -1,26 +1,197 @@
 import parsl
 from parsl.app.app import python_app
 from parsl.config import Config
-from parsl.executors.threads import ThreadPoolExecutor
-from parsl.configs.local_threads import config
+from parsl.executors import HighThroughputExecutor
+from parsl.providers import LocalProvider
+from parsl.providers import AdHocProvider
+from parsl.channels import LocalChannel
+from parsl.channels import SSHChannel
 import networkx as nx
+import itertools
 
-local_threads = Config(
+
+local_thing = Config(
     executors=[
-        ThreadPoolExecutor(
-            max_threads=2,
-            label='local_threads'
+        HighThroughputExecutor(
+            label="local_htex",
+            worker_debug=False,
+            max_workers=48,
+            provider=LocalProvider(
+                channel=LocalChannel(),
+                init_blocks=1,
+                max_blocks=1,
+            ),
         )
     ]
 )
 
-parsl.load(local_threads)
+parsl.load(local_thing)
 
 @python_app
 def glue_16_attempt(graph_obj, a, b, permutation, output_path):
     import networkx as nx
     import itertools
-    import GluingClassesJ as gcj
+    import importlib.util
+    import sys
+    # spec = importlib.util.spec_from_file_location("module.name", "./GluingClassesJ.py")
+    # gcj = importlib.util.module_from_spec(spec)
+    # sys.modules["module.name"] = gcj
+    # spec.loader.exec_module(gcj)
+    #foo.MyClass()
+    #import GluingClassesJ as gcj
+    #PUTTING GLUINGCLASSESJ HERE
+
+    import enum
+    class EdgeExists(enum.Enum):
+        UNKNOWN = 0 
+        TRUE = 1 
+        FALSE = 2 
+
+    class ClauseType(enum.Enum):
+        CLIQUE = 0 
+        INDEP_NO_EDGES = 1 
+        INDEP_SAME_SET_EDGE = 2 
+
+
+    # Define a class to represent variables as described on page 7
+    class PotentialEdge:
+        
+        # Construct a new PotentialEdge between vertex G_vert in G and H_vert in H
+        def __init__(self, G_vert, H_vert):
+            # Set variables
+            self.G_vertex = G_vert
+            self.H_vertex = H_vert
+            # Set current value of the variable
+            self.exists = EdgeExists.UNKNOWN
+            # Create sets of clique clauses and independent-set clauses
+            self.clique_clauses = []
+            self.ind_set_clauses = []
+            self.ind_same_set_clauses = []
+
+        def __str__(self):
+            if self.exists == EdgeExists.UNKNOWN:
+                return "("+str(self.G_vertex) + "," + str(self.H_vertex)+ "," + "U)"
+            elif self.exists == EdgeExists.TRUE:
+                return "("+str(self.G_vertex) + "," + str(self.H_vertex)+ "," + "T)"
+            else:
+                return "("+str(self.G_vertex) + "," + str(self.H_vertex)+ "," + "F)"
+        
+        # Set the value of the variable
+        # NOTE: This should only be used when we change the value from UNKNOWN to TRUE or FALSE
+        # INPUT: new_value for exists to be set to
+        def set_exists(self, new_value):
+            self.exists = new_value
+            # Decrease the number of unknown for each clause this variable is in
+            for clause in self.clique_clauses:
+                clause.decr_num_unknown(new_value)
+            for clause in self.ind_set_clauses:
+                clause.decr_num_unknown(new_value)
+            for clause in self.ind_same_set_clauses:
+                clause.decr_num_unknown(new_value)
+        
+        
+        # Add a clause that the variable is in
+        # INPUT: a clause that this variable is in and that should be added to it's list,
+        #        an enum that is the type of clause
+        def add_clause(self, clause, clause_type):
+            if clause_type == ClauseType.CLIQUE:
+                self.clique_clauses.append(clause)
+            elif clause_type == ClauseType.INDEP_NO_EDGES:
+                self.ind_set_clauses.append(clause)
+            else:
+                self.ind_same_set_clauses.append(clause)
+
+
+
+    # Define a class to represent clauses as described on page 7
+    class Clause:
+        
+        # Construct a new Clause
+        # INPUT: a list of PotentialEdges/variables that are contained in this Clause
+        #        an enum that is the type of clause
+        def __init__(self, variables, clause_type):
+            # Set variables
+            self.potential_edges = variables
+            self.num_unknown = len(variables)
+            self.clause_type = clause_type
+            # Number of variables whose value is undesired 
+            #        (i.e. number of TRUEs if it's a clique clause, FALSEs if an independent set clause)
+            self.num_undesired = 0 
+            
+            # Add clauses to each potential edge
+            for pot_edge in variables:
+                pot_edge.add_clause(self, clause_type)
+
+        def __str__(self):
+            output = ""
+            for var in self.potential_edges:
+                output += str(var) + ", "
+            output += str(self.clause_type)
+            return output
+        
+        
+        # Decrease the number of unknowns, called when a PotentialEdge's value goes from UNKNOWN to TRUE or FALSE
+        # INPUT: the new value that the PotentialEdge was changed to
+        def decr_num_unknown(self, new_value):
+            # Decrease the number of unknowns by 1
+            self.num_unknown -= 1 
+            # Update number of variables with undesired value
+            if self.clause_type == ClauseType.CLIQUE and new_value == EdgeExists.TRUE:
+                self.num_undesired += 1 
+            elif self.clause_type != ClauseType.CLIQUE and new_value == EdgeExists.FALSE:
+                self.num_undesired += 1 
+        
+        
+        # Determine whether all PotentialEdges in the clause are set to a value (i.e. are not UNKNOWN)
+        # OUTPUT: a boolean, True if there are no UNKNOWNs, False otherwise
+        def is_full(self):
+            return self.num_unknown == 0 
+        
+        # Determine whether the clique causes a FAIL state
+        #       i.e. if all variables are TRUE when this is a clique clause or all variables FALSE when this is an independent set clause
+        # OUTPUT: a boolean, True if in a FAIL state, False otherwise
+        def in_fail_state(self):
+            if self.clause_type == ClauseType.CLIQUE:
+                return self.num_unknown == 0  and self.num_undesired == len(self.potential_edges)
+            elif self.clause_type == ClauseType.INDEP_NO_EDGES:
+                #if there are k potential edges, and k-1 set to False, then 1 is set to true - complement of this is a J
+                return self.num_unknown == 0 and self.num_undesired >= len(self.potential_edges) - 1
+            else:
+                return self.num_unknown == 0  and self.num_undesired == len(self.potential_edges)
+
+        def is_satisfied(self):
+            if self.clause_type == ClauseType.INDEP_NO_EDGES:
+                return self.num_undesired + self.num_unknown <= len(self.potential_edges) - 2
+            else:
+                return self.num_undesired + self.num_unknown <= len(self.potential_edges) - 1
+
+
+    # Construct a class to represent the matrix of variables
+    class PotentialEdgeMatrix:
+        
+        # Construct a new Matrix of Potential Edges as described in the paper
+        # INPUT: num_rows = |VG|-|VK|-1, num_cols = |VH|-|VK|-1
+        def __init__(self, num_rows, num_cols):
+            # Create the matrix
+            # NOTE: Should probably change to a more efficient data structure, since python lists are LinkedLists
+            self.matrix = []
+            for row in range(0 , num_rows):
+                current_row = []
+                for col in range(0 , num_cols):
+                    current_row.append(PotentialEdge(row, col))
+                self.matrix.append(current_row)
+        def __str__(self):
+            output = "["
+            for list in self.matrix:
+                output += "["
+                for elem in list:
+                    output += str(elem)
+                    output += ", "
+                output += "],"
+            output += "]"
+
+            return output
+
 
     #I think ur supposed to locally define these functions...
     def is_clique(G, nodes):
@@ -320,7 +491,7 @@ def glue_16_attempt(graph_obj, a, b, permutation, output_path):
             i += 1
 
         d_prime = len(xs) #i think this should be correct
-        M = gcj.PotentialEdgeMatrix(d_prime, d_prime)
+        M = PotentialEdgeMatrix(d_prime, d_prime)
         clauses = []
 
 
@@ -332,7 +503,7 @@ def glue_16_attempt(graph_obj, a, b, permutation, output_path):
             for g_vertex in g_vertices:
                 for h_vertex in h_vertices:
                     variables.append(M.matrix[g_map[g_vertex]][h_map[h_vertex]])
-            new_clause = gcj.Clause(variables, gcj.ClauseType.CLIQUE)
+            new_clause = Clause(variables, ClauseType.CLIQUE)
             clauses.append(new_clause)
 
         for indep_set in rst_IS:
@@ -342,7 +513,7 @@ def glue_16_attempt(graph_obj, a, b, permutation, output_path):
             for g_vertex in g_vertices:
                 for h_vertex in h_vertices:
                     variables.append(M.matrix[g_map[g_vertex]][h_map[h_vertex]])
-            new_clause = gcj.Clause(variables, gcj.ClauseType.INDEP_NO_EDGES)
+            new_clause = Clause(variables, ClauseType.INDEP_NO_EDGES)
             clauses.append(new_clause)
 
         for indep_set_OE in rst_ISOE:
@@ -352,7 +523,7 @@ def glue_16_attempt(graph_obj, a, b, permutation, output_path):
             for g_vertex in g_vertices:
                 for h_vertex in h_vertices:
                     variables.append(M.matrix[g_map[g_vertex]][h_map[h_vertex]])
-            new_clause = gcj.Clause(variables, gcj.ClauseType.INDEP_SAME_SET_EDGE)
+            new_clause = Clause(variables, ClauseType.INDEP_SAME_SET_EDGE)
             clauses.append(new_clause)
         
         return clauses, M, g_map, h_map
@@ -366,7 +537,7 @@ def glue_16_attempt(graph_obj, a, b, permutation, output_path):
         assignments = []
         while len(stack) > 0:
             alpha = stack.pop()
-            if alpha.exists == gcj.EdgeExists.FALSE:
+            if alpha.exists == EdgeExists.FALSE:
                 for i_clause in alpha.ind_set_clauses:
                     num_variables = len(i_clause.potential_edges)
                     #This means all are FALSE
@@ -377,8 +548,8 @@ def glue_16_attempt(graph_obj, a, b, permutation, output_path):
                     #and either 1 is true and 1 is unknown or both are unknown
                     elif i_clause.num_undesired == num_variables - 2 and i_clause.num_unknown >= 1:
                         for beta in i_clause.potential_edges:
-                            if beta.exists == gcj.EdgeExists.UNKNOWN:
-                                beta.set_exists(gcj.EdgeExists.TRUE)
+                            if beta.exists == EdgeExists.UNKNOWN:
+                                beta.set_exists(EdgeExists.TRUE)
                                 #print(str(beta) + " is now true")
                                 stack.append(beta)
                 for i_clause in alpha.ind_same_set_clauses:
@@ -390,8 +561,8 @@ def glue_16_attempt(graph_obj, a, b, permutation, output_path):
                     #this means all are FALSE except one variable
                     elif i_clause.num_undesired == num_variables - 1 and i_clause.num_unknown == 1:
                         for beta in i_clause.potential_edges:
-                            if beta.exists == gcj.EdgeExists.UNKNOWN:
-                                beta.set_exists(gcj.EdgeExists.TRUE)
+                            if beta.exists == EdgeExists.UNKNOWN:
+                                beta.set_exists(EdgeExists.TRUE)
                                 #print(str(beta) + " is now true")
                                 stack.append(beta)
             else:
@@ -404,8 +575,8 @@ def glue_16_attempt(graph_obj, a, b, permutation, output_path):
                     #this means all are TRUE except one variable
                     elif c_clause.num_undesired == num_variables - 1 and c_clause.num_unknown == 1:
                         for beta in c_clause.potential_edges:
-                            if beta.exists == gcj.EdgeExists.UNKNOWN:
-                                beta.set_exists(gcj.EdgeExists.FALSE)
+                            if beta.exists == EdgeExists.UNKNOWN:
+                                beta.set_exists(EdgeExists.FALSE)
                                 #print(str(beta) + " is now false")
                                 stack.append(beta)
         return True
@@ -419,21 +590,21 @@ def glue_16_attempt(graph_obj, a, b, permutation, output_path):
         
         for clause in clauses:
             if len(clause.potential_edges) == 1:
-                if clause.clause_type == gcj.ClauseType.CLIQUE:
-                    clause.potential_edges[0].set_exists(gcj.EdgeExists.FALSE)
+                if clause.clause_type == ClauseType.CLIQUE:
+                    clause.potential_edges[0].set_exists(EdgeExists.FALSE)
                     stack.append(clause.potential_edges[0])
-                elif clause.clause_type == gcj.ClauseType.INDEP_SAME_SET_EDGE:
-                    clause.potential_edges[0].set_exists(gcj.EdgeExists.TRUE)
+                elif clause.clause_type == ClauseType.INDEP_SAME_SET_EDGE:
+                    clause.potential_edges[0].set_exists(EdgeExists.TRUE)
                     stack.append(clause.potential_edges[0])
                 else:
                     #in this case, its a (4,1,1) indep set with no edges, but we need 2 edges.
                     print("Problem", clause)
                     return None
             elif len(clause.potential_edges) == 2:
-                if clause.clause_type == gcj.ClauseType.INDEP_NO_EDGES:
-                    clause.potential_edges[0].set_exists(gcj.EdgeExists.TRUE)
+                if clause.clause_type == ClauseType.INDEP_NO_EDGES:
+                    clause.potential_edges[0].set_exists(EdgeExists.TRUE)
                     stack.append(clause.potential_edges[0])
-                    clause.potential_edges[1].set_exists(gcj.EdgeExists.TRUE)
+                    clause.potential_edges[1].set_exists(EdgeExists.TRUE)
                     stack.append(clause.potential_edges[1])
                     
         return stack
@@ -450,7 +621,7 @@ def glue_16_attempt(graph_obj, a, b, permutation, output_path):
             unknown_list = []
             for list in M.matrix:
                 for elem in list:
-                    if elem.exists == gcj.EdgeExists.UNKNOWN:
+                    if elem.exists == EdgeExists.UNKNOWN:
                         unknown_list.append(elem)
             if len(unknown_list) == 0:
                 return M
@@ -460,7 +631,7 @@ def glue_16_attempt(graph_obj, a, b, permutation, output_path):
                 #this copying is done to prevent changes in one recursion from affecting the second
                 num_rows = len(M.matrix)
                 num_cols = len(M.matrix[0])
-                M_copy = gcj.PotentialEdgeMatrix(num_rows, num_cols)
+                M_copy = PotentialEdgeMatrix(num_rows, num_cols)
                 clauses_copy = []
                 for clause in clauses:
                     #we only copy unsatisfied clauses as an optimization
@@ -469,15 +640,15 @@ def glue_16_attempt(graph_obj, a, b, permutation, output_path):
                         new_vars = []
                         for var in old_vars:
                             new_vars.append(M_copy.matrix[var.G_vertex][var.H_vertex])
-                        new_clause = gcj.Clause(new_vars, clause.clause_type)
+                        new_clause = Clause(new_vars, clause.clause_type)
                         clauses_copy.append(new_clause)
                         
                 for i in range(num_rows):
                     for j in range(num_cols):
-                        if M.matrix[i][j].exists == gcj.EdgeExists.TRUE:
-                            M_copy.matrix[i][j].set_exists(gcj.EdgeExists.TRUE)
-                        elif M.matrix[i][j].exists == gcj.EdgeExists.FALSE:
-                            M_copy.matrix[i][j].set_exists(gcj.EdgeExists.FALSE)
+                        if M.matrix[i][j].exists == EdgeExists.TRUE:
+                            M_copy.matrix[i][j].set_exists(EdgeExists.TRUE)
+                        elif M.matrix[i][j].exists == EdgeExists.FALSE:
+                            M_copy.matrix[i][j].set_exists(EdgeExists.FALSE)
                 
                 #Using the paper's heuristic to decide what variable to add to the stack
                 next_vertex = unknown_list[0]
@@ -503,8 +674,8 @@ def glue_16_attempt(graph_obj, a, b, permutation, output_path):
                 stack = [next_vertex]
                 stack_copy = [M_copy.matrix[next_vertex.G_vertex][next_vertex.H_vertex]]
                 
-                M.matrix[next_vertex.G_vertex][next_vertex.H_vertex].set_exists(gcj.EdgeExists.FALSE)
-                M_copy.matrix[next_vertex.G_vertex][next_vertex.H_vertex].set_exists(gcj.EdgeExists.TRUE)
+                M.matrix[next_vertex.G_vertex][next_vertex.H_vertex].set_exists(EdgeExists.FALSE)
+                M_copy.matrix[next_vertex.G_vertex][next_vertex.H_vertex].set_exists(EdgeExists.TRUE)
                 list1 = recursive_solving(M, clauses, stack, depth+1)           
                 if list1 is not None:
                     return list1 
@@ -531,7 +702,7 @@ def glue_16_attempt(graph_obj, a, b, permutation, output_path):
         # Add edges between vertices of G and H based on a succesfull gluing represented by M
         for x in g_map:
             for y in h_map:
-                if M.matrix[g_map[x]][h_map[y]].exists == gcj.EdgeExists.TRUE:
+                if M.matrix[g_map[x]][h_map[y]].exists == EdgeExists.TRUE:
                     glued_graph.add_edge(x, y)
         
         return glued_graph
@@ -547,11 +718,11 @@ def glue_16_attempt(graph_obj, a, b, permutation, output_path):
         if i not in map1:
             map1[i] = "g"+str(i)
     nx.relabel_nodes(G, map1, False)
-    print(G.nodes())
+    #print(G.nodes())
 
     H = graph_obj.copy()
     H = nx.complement(H)
-    print(H.nodes())
+    #print(H.nodes())
     H_k = list(nx.neighbors(H,b))
     H_k.sort()
     map2 = {b:"b"}
@@ -561,7 +732,7 @@ def glue_16_attempt(graph_obj, a, b, permutation, output_path):
         if i not in map2:
             map2[i] = "h"+str(i)
     nx.relabel_nodes(H, map2, False)
-    print(H.nodes())
+    #print(H.nodes())
 
     K = nx.Graph()
     K.add_nodes_from(["k0", "k1", "k2", "k3", "k4"])
@@ -589,45 +760,28 @@ def glue_16_attempt(graph_obj, a, b, permutation, output_path):
             return True
     
 COMMON_GRAPH = nx.read_graph6('dataset_k3kme/k3k6e_16.g6')
-gluing_attempts = []
+gluing_attempts = {}
 pair = (0,0)
-#for perm in itertools.permutations(["k0", "k1", "k2", "k3", "k4"], 5):
-perm = ("k0", "k1", "k2", "k3", "k4")
-perm_str = ''.join(perm)
-output_file = "gluek3k6e_16_" + str(pair[0]) + "_" + str(pair[1]) + "_" + perm_str
-gluing_attempts.append(glue_16_attempt(COMMON_GRAPH.copy(), 0, 0, perm, output_file))
+for pair in itertools.combinations_with_replacement(range(16), 2):
+    #print(pair)
+    gluing_attempts[pair] = []
+    for perm in itertools.permutations(["k0", "k1", "k2", "k3", "k4"], 5):
+        #perm = ("k0", "k1", "k2", "k3", "k4")
+        perm_str = ''.join(perm)
+        output_file = "gluek3k6e_16_" + str(pair[0]) + "_" + str(pair[1]) + "_" + perm_str
+        gluing_attempts[pair].append(glue_16_attempt(COMMON_GRAPH.copy(), pair[0], pair[1], perm, output_file))
 
-perm2 = ("k0", "k1", "k2", "k4", "k3")
-perm_str2 = ''.join(perm2)
-output_file2 = "gluek3k6e_16_" + str(pair[0]) + "_" + str(pair[1]) + "_" + perm_str2
-gluing_attempts.append(glue_16_attempt(COMMON_GRAPH.copy(), 0, 0, perm, output_file2))
-
-outputs = [i.result() for i in gluing_attempts]
-print(outputs)
-
-# @python_app
-# def pi(num_points):
-#     from random import random
+outputs = {}
+for pair in itertools.combinations_with_replacement(range(16), 2):
+    outputs[pair] = [i.result() for i in gluing_attempts[pair]]
+    gluing_found = False
+    for bool in outputs[pair]:
+        if bool:
+            print(pair, outputs[pair])
+            gluing_found = True
+            break
     
-#     inside = 0   
-#     for i in range(num_points):
-#         x, y = random(), random()  # Drop a random point in the box.
-#         if x**2 + y**2 < 1:        # Count points within the circle.
-#             inside += 1
-    
-#     return (inside*4 / num_points)
-
-# # App that computes the mean of three values
-# @python_app
-# def mean(a, b, c):
-#     return (a + b + c) / 3
-
-# # Estimate three values for pi
-# a, b, c = pi(10**8), pi(10**8), pi(10**8)
-
-# # Compute the mean of the three estimates
-# mean_pi  = mean(a, b, c)
-
-# # Print the results
-# print("a: {:.5f} b: {:.5f} c: {:.5f}".format(a.result(), b.result(), c.result()))
-# print("Average: {:.5f}".format(mean_pi.result()))
+    if not gluing_found:
+        print(pair, " had no gluings")
+#outputs = [i.result() for i in gluing_attempts]
+#print(outputs)
