@@ -28,7 +28,7 @@ local_thing = Config(
 parsl.load(local_thing)
 
 @python_app
-def glue_16_attempt(graph_obj, a, b, permutation):
+def glue_15_attempt(graph_obj, a, b, permutation, output_path):
     import networkx as nx
     import itertools
     import importlib.util
@@ -714,29 +714,32 @@ def glue_16_attempt(graph_obj, a, b, permutation):
     map1 = {a:"a"}
     for i in range(len(G_k)):
         map1[G_k[i]] = "k"+str(i)
-    for i in range(16):
+    for i in range(15):
         if i not in map1:
             map1[i] = "g"+str(i)
     nx.relabel_nodes(G, map1, False)
-    #print(G.nodes())
+    print(G.nodes())
 
     H = graph_obj.copy()
     H = nx.complement(H)
-    #print(H.nodes())
+    
     H_k = list(nx.neighbors(H,b))
     H_k.sort()
     map2 = {b:"b"}
     for i in range(len(H_k)):
         map2[H_k[i]] = permutation[i]
-    for i in range(16):
+    for i in range(15):
         if i not in map2:
             map2[i] = "h"+str(i)
     nx.relabel_nodes(H, map2, False)
-    #print(H.nodes())
+    print(H.nodes())
 
     K = nx.Graph()
-    K.add_nodes_from(["k0", "k1", "k2", "k3", "k4"])
-
+    if len(permutation) == 5:
+        K.add_nodes_from(["k0", "k1", "k2", "k3", "k4"])
+    else:
+        K.add_nodes_from(["k0", "k1", "k2", "k3"])
+    print(K.nodes())
     clauses, M, g_map, h_map = create_SAT_formula(G, "a", H, "b", K)
     # sum = 0
     # for i in range(100000000):
@@ -756,22 +759,51 @@ def glue_16_attempt(graph_obj, a, b, permutation):
             return False 
         else:
             glued = glue(G, "a", H, "b", solution, g_map, h_map)
+
+            glued = nx.read_graph6('test.g6')
+            for v_comb in itertools.combinations(glued.nodes(), 6):
+                num_edges = 0
+                for pair in itertools.combinations(v_comb, 2):
+                    if glued.has_edge(pair[0], pair[1]):
+                        num_edges += 1
+                if num_edges <= 1:
+                    print(v_comb)
+                    for pair in itertools.combinations(v_comb, 2):
+                        if glued.has_edge(pair[0], pair[1]):
+                            print(pair)
+
+            for v_comb in itertools.combinations(glued.nodes(), 4):
+                if is_clique(glued, v_comb):
+                    print(v_comb, "4-clique")
             #nx.write_graph6(glued, output_path)
             return True
     
-COMMON_GRAPH = nx.read_graph6('dataset_k3kme/k3k6e_16.g6')
+COMMON_GRAPH = nx.read_graph6('dataset_k3kme/k3k6e_15.g6')
 gluing_attempts = {}
-pair = (0,0)
-for pair in itertools.combinations_with_replacement(range(16), 2):
+# res = glue_15_attempt(COMMON_GRAPH.copy(), 0, 0, ('k0', 'k1', 'k2', 'k3', 'k4'), "test.g6") 
+# print(res)
+#index = 0
+#for perm in itertools.permutations(["k0", "k1", "k2", "k3", "k4"], 5):
+#    print(perm, index)
+#    index += 1
+
+for pair in itertools.combinations_with_replacement(range(10), 2):
     #print(pair)
     gluing_attempts[pair] = []
     for perm in itertools.permutations(["k0", "k1", "k2", "k3", "k4"], 5):
         #perm = ("k0", "k1", "k2", "k3", "k4")
         perm_str = ''.join(perm)
-        gluing_attempts[pair].append(glue_16_attempt(COMMON_GRAPH.copy(), pair[0], pair[1], perm))
+        gluing_attempts[pair].append(glue_15_attempt(COMMON_GRAPH.copy(), pair[0], pair[1], perm))
+
+for pair in itertools.combinations_with_replacement(range(10, 15), 2):
+    gluing_attempts[pair] = []
+    for perm in itertools.permutations(["k0", "k1", "k2", "k3"], 4):
+        #perm = ("k0", "k1", "k2", "k3")
+        perm_str = ''.join(perm)
+        gluing_attempts[pair].append(glue_15_attempt(COMMON_GRAPH.copy(), pair[0], pair[1], perm))
 
 outputs = {}
-for pair in itertools.combinations_with_replacement(range(16), 2):
+for pair in gluing_attempts:
     outputs[pair] = [i.result() for i in gluing_attempts[pair]]
     gluing_found = False
     for bool in outputs[pair]:
@@ -780,7 +812,7 @@ for pair in itertools.combinations_with_replacement(range(16), 2):
             gluing_found = True
             break
     
-    if not gluing_found:
-        print(pair, " had no gluings")
-#outputs = [i.result() for i in gluing_attempts]
-#print(outputs)
+#     if not gluing_found:
+#         print(pair, " had no gluings")
+# outputs = [i.result() for i in gluing_attempts]
+# print(outputs)
