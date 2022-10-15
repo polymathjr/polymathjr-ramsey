@@ -8,6 +8,7 @@ from parsl.channels import LocalChannel
 from parsl.channels import SSHChannel
 import networkx as nx
 import itertools
+import pickle
 
 
 local_thing = Config(
@@ -28,7 +29,7 @@ local_thing = Config(
 parsl.load(local_thing)
 
 @python_app
-def glue_15_attempt(graph_obj, a, b, permutation, output_path):
+def glue_14_attempt(graph_obj_1, a, graph_obj_2, b, permutation, output_path):
     import networkx as nx
     import itertools
     import importlib.util
@@ -613,10 +614,12 @@ def glue_15_attempt(graph_obj, a, b, permutation, output_path):
     #Input: M are the initial variables, clauses are the clauses 
     #This probably means we need to make a copy of M/clauses/a new stack for each execution in case of failure.
     #Output: list of possible gluings
-    def recursive_solving(M, clauses, stack, depth):
+    def recursive_solving(M, clauses, stack, G, a, H, b, g_map, h_map, file_to_write):
+        #print(depth)
         if stack_algo(stack) == False:
             #print("Failed at depth ", depth)
-            return None
+            return 0
+            #return False
         else:
             unknown_list = []
             for list in M.matrix:
@@ -624,7 +627,11 @@ def glue_15_attempt(graph_obj, a, b, permutation, output_path):
                     if elem.exists == EdgeExists.UNKNOWN:
                         unknown_list.append(elem)
             if len(unknown_list) == 0:
-                return M
+                glued = glue(G, a, H, b, M, g_map, h_map)
+                g6_bytes = nx.to_graph6_bytes(glued)
+                file_to_write.write(g6_bytes)
+                return 1
+                #return True
             else:
                 #this part of the code creates a copy of M and clauses
                 #we use the original M and clauses for the first recursion, and the copy for a second
@@ -633,6 +640,7 @@ def glue_15_attempt(graph_obj, a, b, permutation, output_path):
                 num_cols = len(M.matrix[0])
                 M_copy = PotentialEdgeMatrix(num_rows, num_cols)
                 clauses_copy = []
+ 
                 for clause in clauses:
                     #we only copy unsatisfied clauses as an optimization
                     if not (clause.is_satisfied()):
@@ -676,11 +684,9 @@ def glue_15_attempt(graph_obj, a, b, permutation, output_path):
                 
                 M.matrix[next_vertex.G_vertex][next_vertex.H_vertex].set_exists(EdgeExists.FALSE)
                 M_copy.matrix[next_vertex.G_vertex][next_vertex.H_vertex].set_exists(EdgeExists.TRUE)
-                list1 = recursive_solving(M, clauses, stack, depth+1)           
-                if list1 is not None:
-                    return list1 
-                list2 = recursive_solving(M_copy, clauses_copy, stack_copy, depth+1)
-                return list2
+                val1 = recursive_solving(M, clauses, stack, G, a, H, b, g_map, h_map, file_to_write)           
+                val2 = recursive_solving(M_copy, clauses_copy, stack_copy, G, a, H, b, g_map, h_map, file_to_write)
+                return val1 + val2
 
     # Description: We will use a matrix M to glue two pointed graphs together. 
     # Input: Two pointed graphs (G, a) and (H, b) as well as the intersection K. 
@@ -707,96 +713,73 @@ def glue_15_attempt(graph_obj, a, b, permutation, output_path):
         
         return glued_graph
 
-    G = graph_obj.copy()
-    G = nx.complement(G)
+    G = graph_obj_1.copy()
     G_k = list(nx.neighbors(G,a))
     G_k.sort()
     map1 = {a:"a"}
     for i in range(len(G_k)):
         map1[G_k[i]] = "k"+str(i)
-    for i in range(15):
+    for i in range(14):
         if i not in map1:
             map1[i] = "g"+str(i)
     nx.relabel_nodes(G, map1, False)
-    print(G.nodes())
+    #print(G.nodes())
 
-    H = graph_obj.copy()
-    H = nx.complement(H)
-    
+    H = graph_obj_2.copy()
     H_k = list(nx.neighbors(H,b))
     H_k.sort()
     map2 = {b:"b"}
     for i in range(len(H_k)):
         map2[H_k[i]] = permutation[i]
-    for i in range(15):
+    for i in range(14):
         if i not in map2:
             map2[i] = "h"+str(i)
     nx.relabel_nodes(H, map2, False)
-    print(H.nodes())
+    #print(H.nodes())
 
     K = nx.Graph()
     if len(permutation) == 5:
         K.add_nodes_from(["k0", "k1", "k2", "k3", "k4"])
-    else:
+    elif len(permutation) == 4:
         K.add_nodes_from(["k0", "k1", "k2", "k3"])
-    print(K.nodes())
+    else:
+        K.add_nodes_from(["k0", "k1", "k2"])
+
     clauses, M, g_map, h_map = create_SAT_formula(G, "a", H, "b", K)
-    # sum = 0
-    # for i in range(100000000):
-    #     sum += 1
-    
-    # return False 
-    stack = setup_stack(clauses)
-    
+    stack = setup_stack(clauses) 
     #print(stack)
     if stack is None:
         print("4,1,1 issue")
-        return False 
+        return 0
     else:
-        solution = recursive_solving(M, clauses, stack, 0)
-        if solution == None:
-            print("no solution found...?")
-            return False 
-        else:
-            glued = glue(G, "a", H, "b", solution, g_map, h_map)
-            #nx.write_graph6(glued, output_path)
-            return True
+        output_file = open(output_path, "wb")
+        solution = recursive_solving(M, clauses, stack, G, "a", H, "b", g_map, h_map, output_file)
+        output_file.close()
+        return solution
     
-COMMON_GRAPH = nx.read_graph6('dataset_k3kme/k3k6e_15.g6')
+graph_list = nx.read_graph6('dataset_k3kme/k3k6e_14.g6')
 gluing_attempts = {}
-# res = glue_15_attempt(COMMON_GRAPH.copy(), 0, 0, ('k0', 'k1', 'k2', 'k3', 'k4'), "test.g6") 
-# print(res)
-#index = 0
-#for perm in itertools.permutations(["k0", "k1", "k2", "k3", "k4"], 5):
-#    print(perm, index)
-#    index += 1
+file_to_read = open("14gluingproblems", "rb")
+gluing_problems = pickle.load(file_to_read)
+file_to_read.close()
 
-for pair in itertools.combinations_with_replacement(range(10), 2):
-    #print(pair)
-    gluing_attempts[pair] = []
-    for perm in itertools.permutations(["k0", "k1", "k2", "k3", "k4"], 5):
-        #perm = ("k0", "k1", "k2", "k3", "k4")
-        perm_str = ''.join(perm)
-        gluing_attempts[pair].append(glue_15_attempt(COMMON_GRAPH.copy(), pair[0], pair[1], perm))
-
-for pair in itertools.combinations_with_replacement(range(10, 15), 2):
-    gluing_attempts[pair] = []
-    for perm in itertools.permutations(["k0", "k1", "k2", "k3"], 4):
-        #perm = ("k0", "k1", "k2", "k3")
-        perm_str = ''.join(perm)
-        gluing_attempts[pair].append(glue_15_attempt(COMMON_GRAPH.copy(), pair[0], pair[1], perm))
+index = 0
+for problem in gluing_problems:
+    graph1 = graph_list[problem[0][0]]
+    graph1 = nx.complement(graph1)
+    graph2 = graph_list[problem[1][0]]
+    graph2 = nx.complement(graph2)
+    a = problem[0][1]
+    b = problem[1][1]
+    perm = problem[2]
+    output_path = "14-graphs/14iso"+str(index)+".g6"
+    index += 1
+    gluing_attempts[((problem[0][0], problem[0][1]), (problem[1][0], problem[1][1]), perm)] = glue_14_attempt(graph1, a, graph2, b, perm, output_path)
+        
 
 outputs = {}
 for pair in gluing_attempts:
-    outputs[pair] = [i.result() for i in gluing_attempts[pair]]
-    gluing_found = False
-    for bool in outputs[pair]:
-        if bool:
-            print(pair, outputs[pair])
-            gluing_found = True
-            break
-    
-#     if not gluing_found:
-#         print(pair, " had no gluings")
-# outputs = [i.result() for i in gluing_attempts]
-# print(outputs)
+    #print(pair)
+    #print(gluing_attempts[pair].result())
+    outputs[pair] = gluing_attempts[pair].result()
+    print(str(pair) + ", " + str(outputs[pair]))
