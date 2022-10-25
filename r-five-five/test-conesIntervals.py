@@ -254,7 +254,9 @@ def brute_extend(G, verts, extended):
             return False
     return True
 
-
+with open('r44_11.g6', 'r') as file:
+    original = file.read().splitlines()
+r44_11 = [decodeG6(graph) for graph in original[:500]]
 
 def brute_testing(H):
     '''brute forces all possible cones, comparing the number found to Elisha's algorithm. 
@@ -296,9 +298,10 @@ def brute_testing(H):
                 #print("Maximality verified: ", cone)
                 pass
     if not messedUp:
-            print("maximalFeasibleCones is correct ")   
+            #print("maximalFeasibleCones is correct ")  
+            pass  
     else:
         print("maximalFeasibleCones messed up") 
 
-for i in range(len(r44_14)):
-    brute_testing(r44_14[i])
+for i in range(len(r44_11)):
+    brute_testing(r44_11[i])
